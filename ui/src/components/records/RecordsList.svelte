@@ -367,6 +367,207 @@
         const selectedRecords = Object.values(bulkSelected);
         exportToCSV(selectedRecords);
     }
+
+    let fileInput;
+    let isImporting = false;
+
+    function triggerImport() {
+        fileInput?.click();
+    }
+
+    async function handleFileImport(event) {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        if (!file.name.endsWith('.csv')) {
+            ApiClient.error({ message: "Please select a CSV file" });
+            return;
+        }
+
+        isImporting = true;
+
+        try {
+            const text = await file.text();
+            const rows = parseCSV(text);
+
+            if (rows.length === 0) {
+                ApiClient.error({ message: "CSV file is empty" });
+                return;
+            }
+
+            // First row is headers
+            const headers = rows[0];
+            const dataRows = rows.slice(1);
+
+            // Map headers to field names (case-insensitive matching)
+            const fieldMap = {};
+            const availableFields = fields.map(f => f.name.toLowerCase());
+
+            headers.forEach((header, index) => {
+                const normalizedHeader = header.toLowerCase().trim();
+                const matchingField = fields.find(f => f.name.toLowerCase() === normalizedHeader);
+                if (matchingField) {
+                    fieldMap[index] = matchingField.name;
+                }
+            });
+
+            if (Object.keys(fieldMap).length === 0) {
+                ApiClient.error({ message: "No matching columns found between CSV and collection fields" });
+                return;
+            }
+
+            let successCount = 0;
+            let errorCount = 0;
+            const errors = [];
+
+            // Process records
+            for (let i = 0; i < dataRows.length; i++) {
+                const row = dataRows[i];
+                const recordData = {};
+
+                // Map CSV columns to record fields
+                Object.entries(fieldMap).forEach(([colIndex, fieldName]) => {
+                    let value = row[colIndex]?.trim() || '';
+
+                    // Find the field definition
+                    const field = fields.find(f => f.name === fieldName);
+
+                    if (field && value) {
+                        // Handle different field types
+                        switch (field.type) {
+                            case 'bool':
+                                recordData[fieldName] = value.toLowerCase() === 'true' || value === '1';
+                                break;
+                            case 'number':
+                                recordData[fieldName] = parseFloat(value) || 0;
+                                break;
+                            case 'json':
+                                try {
+                                    recordData[fieldName] = JSON.parse(value);
+                                } catch {
+                                    recordData[fieldName] = value;
+                                }
+                                break;
+                            case 'select':
+                            case 'relation':
+                                // Handle arrays (semicolon or comma separated)
+                                if (value.includes(';')) {
+                                    recordData[fieldName] = value.split(';').map(v => v.trim()).filter(Boolean);
+                                } else if (value.includes(',')) {
+                                    recordData[fieldName] = value.split(',').map(v => v.trim()).filter(Boolean);
+                                } else {
+                                    recordData[fieldName] = [value];
+                                }
+                                break;
+                            default:
+                                recordData[fieldName] = value;
+                        }
+                    }
+                });
+
+                try {
+                    // Check if record has ID and if it exists
+                    if (recordData.id) {
+                        // Try to update existing record
+                        try {
+                            await ApiClient.collection(collection.id).update(recordData.id, recordData);
+                            successCount++;
+                        } catch (err) {
+                            // If record doesn't exist, create new one
+                            if (err?.status === 404) {
+                                await ApiClient.collection(collection.id).create(recordData);
+                                successCount++;
+                            } else {
+                                throw err;
+                            }
+                        }
+                    } else {
+                        // Create new record
+                        await ApiClient.collection(collection.id).create(recordData);
+                        successCount++;
+                    }
+                } catch (err) {
+                    errorCount++;
+                    errors.push(`Row ${i + 2}: ${err?.message || 'Unknown error'}`);
+                }
+            }
+
+            // Show results
+            if (errorCount > 0) {
+                const errorMsg = `Imported ${successCount} records with ${errorCount} errors:\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n... and ${errors.length - 5} more` : ''}`;
+                console.error(errorMsg);
+                addSuccessToast(`Imported ${successCount} records. ${errorCount} failed (check console for details).`);
+            } else {
+                addSuccessToast(`Successfully imported ${successCount} records`);
+            }
+
+            // Reload the list
+            await reloadLoadedPages();
+            dispatch("import", { successCount, errorCount });
+        } catch (err) {
+            ApiClient.error(err);
+        } finally {
+            isImporting = false;
+            // Reset file input
+            if (fileInput) {
+                fileInput.value = '';
+            }
+        }
+    }
+
+    function parseCSV(text) {
+        const rows = [];
+        let currentRow = [];
+        let currentValue = '';
+        let insideQuotes = false;
+
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const nextChar = text[i + 1];
+
+            if (char === '"') {
+                if (insideQuotes && nextChar === '"') {
+                    // Escaped quote
+                    currentValue += '"';
+                    i++; // Skip next quote
+                } else {
+                    // Toggle quote state
+                    insideQuotes = !insideQuotes;
+                }
+            } else if (char === ',' && !insideQuotes) {
+                // End of field
+                currentRow.push(currentValue);
+                currentValue = '';
+            } else if ((char === '\n' || char === '\r') && !insideQuotes) {
+                // End of row
+                if (char === '\r' && nextChar === '\n') {
+                    i++; // Skip \n in \r\n
+                }
+                currentRow.push(currentValue);
+                if (currentRow.some(v => v.trim() !== '')) {
+                    rows.push(currentRow);
+                }
+                currentRow = [];
+                currentValue = '';
+            } else {
+                currentValue += char;
+            }
+        }
+
+        // Add last row if exists
+        if (currentValue || currentRow.length > 0) {
+            currentRow.push(currentValue);
+            if (currentRow.some(v => v.trim() !== '')) {
+                rows.push(currentRow);
+            }
+        }
+
+        return rows;
+    }
+
+    export function triggerCSVImport() {
+        triggerImport();
+    }
 </script>
 
 <Scroller bind:this={scrollWrapper} class="table-wrapper">
@@ -577,3 +778,12 @@
         </button>
     </div>
 {/if}
+
+<!-- Hidden file input for CSV import -->
+<input
+    bind:this={fileInput}
+    type="file"
+    accept=".csv"
+    class="hidden"
+    on:change={handleFileImport}
+/>

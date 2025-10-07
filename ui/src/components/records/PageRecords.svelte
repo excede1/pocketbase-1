@@ -199,6 +199,17 @@
             </div>
 
             <div class="btns-group">
+                {#if $activeCollection.type !== "view"}
+                    <button
+                        type="button"
+                        class="btn btn-outline"
+                        on:click={() => recordsList?.triggerCSVImport()}
+                    >
+                        <i class="ri-upload-2-line" />
+                        <span class="txt">Import CSV</span>
+                    </button>
+                {/if}
+
                 <button
                     type="button"
                     class="btn btn-outline"
@@ -251,6 +262,9 @@
                     : recordUpsertPanel?.show(showModel);
             }}
             on:delete={() => {
+                recordsCount?.reload();
+            }}
+            on:import={() => {
                 recordsCount?.reload();
             }}
             on:new={() => recordUpsertPanel?.show()}
