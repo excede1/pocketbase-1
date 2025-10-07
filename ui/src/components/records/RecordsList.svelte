@@ -683,7 +683,7 @@
 
                     {#each visibleFields as field (field.id)}
                         <td class="col-type-{field.type} col-field-{field.name}">
-                            <RecordFieldValue short {record} {field} />
+                            <RecordFieldValue short {record} {field} {collection} editable={!isView} />
                         </td>
                     {/each}
 

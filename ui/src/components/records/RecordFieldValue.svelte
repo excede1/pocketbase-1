@@ -8,12 +8,42 @@
     import GeoPointValue from "@/components/records/fields/GeoPointValue.svelte";
     import { superuser } from "@/stores/superuser";
     import CommonHelper from "@/utils/CommonHelper";
+    import ApiClient from "@/utils/ApiClient";
+    import { addSuccessToast } from "@/stores/toasts";
 
     export let record;
     export let field;
     export let short = false;
+    export let collection = null;
+    export let editable = false;
 
     $: rawValue = record?.[field.name];
+
+    let isSaving = false;
+
+    async function handleSelectChange(event) {
+        if (!collection || !record || isSaving) return;
+
+        const newValue = Array.from(event.target.selectedOptions).map(opt => opt.value);
+        const valueToSave = field.maxSelect === 1 ? newValue[0] : newValue;
+
+        isSaving = true;
+
+        try {
+            await ApiClient.collection(collection.id).update(record.id, {
+                [field.name]: valueToSave
+            });
+
+            // Update the local record
+            record[field.name] = valueToSave;
+
+            addSuccessToast("Record updated");
+        } catch (err) {
+            ApiClient.error(err);
+        } finally {
+            isSaving = false;
+        }
+    }
 </script>
 
 {#if field.primaryKey}
@@ -85,11 +115,30 @@
 {:else if field.type === "date" || field.type === "autodate"}
     <FormattedDate date={rawValue} />
 {:else if field.type === "select"}
-    <div class="inline-flex">
-        {#each CommonHelper.toArray(rawValue) as item, i (i + item)}
-            <span class="label">{item}</span>
-        {/each}
-    </div>
+    {#if editable && field.options?.values}
+        <select
+            class="inline-select"
+            class:loading={isSaving}
+            multiple={field.maxSelect !== 1}
+            disabled={isSaving}
+            value={field.maxSelect === 1 ? rawValue : CommonHelper.toArray(rawValue)}
+            on:change={handleSelectChange}
+            on:click|stopPropagation
+        >
+            {#if field.maxSelect === 1}
+                <option value="">-</option>
+            {/if}
+            {#each field.options.values as option}
+                <option value={option}>{option}</option>
+            {/each}
+        </select>
+    {:else}
+        <div class="inline-flex">
+            {#each CommonHelper.toArray(rawValue) as item, i (i + item)}
+                <span class="label">{item}</span>
+            {/each}
+        </div>
+    {/if}
 {:else if field.type === "relation"}
     {@const relations = CommonHelper.toArray(rawValue)}
     {@const expanded = CommonHelper.toArray(record?.expand?.[field.name])}
@@ -135,5 +184,27 @@
     .fallback-block {
         max-height: 100px;
         overflow: auto;
+    }
+    .inline-select {
+        min-width: 120px;
+        padding: 3px 8px;
+        font-size: 13px;
+        border-radius: 4px;
+        border: 1px solid var(--baseAlt2Color);
+        background: var(--baseColor);
+        cursor: pointer;
+    }
+    .inline-select:hover:not(:disabled) {
+        border-color: var(--primaryColor);
+    }
+    .inline-select:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+    .inline-select.loading {
+        opacity: 0.7;
+    }
+    .inline-select[multiple] {
+        min-height: 60px;
     }
 </style>
