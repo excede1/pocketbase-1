@@ -296,6 +296,77 @@
                 return reloadLoadedPages();
             });
     }
+
+    function exportToCSV(recordsToExport = null) {
+        const dataToExport = recordsToExport || records;
+
+        if (!dataToExport.length) {
+            return;
+        }
+
+        // Get all field names for CSV headers
+        const headers = visibleFields.map(f => f.name);
+
+        // Create CSV content
+        let csvContent = headers.join(",") + "\n";
+
+        for (const record of dataToExport) {
+            const row = visibleFields.map(field => {
+                let value = record[field.name];
+
+                // Handle different field types
+                if (value === null || value === undefined) {
+                    return "";
+                }
+
+                // Handle arrays (like multi-select, files, etc.)
+                if (Array.isArray(value)) {
+                    value = value.join("; ");
+                }
+
+                // Handle objects (like JSON fields)
+                if (typeof value === "object") {
+                    value = JSON.stringify(value);
+                }
+
+                // Convert to string and escape quotes
+                value = String(value).replace(/"/g, '""');
+
+                // Wrap in quotes if contains comma, newline, or quote
+                if (value.includes(",") || value.includes("\n") || value.includes('"')) {
+                    return `"${value}"`;
+                }
+
+                return value;
+            });
+
+            csvContent += row.join(",") + "\n";
+        }
+
+        // Create download link
+        const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+
+        link.setAttribute("href", url);
+        link.setAttribute("download", `${collection.name}_${new Date().toISOString().split('T')[0]}.csv`);
+        link.style.visibility = "hidden";
+
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+
+        addSuccessToast("CSV exported successfully");
+    }
+
+    export function exportAllToCSV() {
+        exportToCSV(records);
+    }
+
+    function exportSelectedToCSV() {
+        const selectedRecords = Object.values(bulkSelected);
+        exportToCSV(selectedRecords);
+    }
 </script>
 
 <Scroller bind:this={scrollWrapper} class="table-wrapper">
@@ -487,6 +558,14 @@
             <span class="txt">Reset</span>
         </button>
         <div class="flex-fill" />
+        <button
+            type="button"
+            class="btn btn-sm btn-transparent btn-success"
+            on:click={() => exportSelectedToCSV()}
+        >
+            <i class="ri-download-2-line" />
+            <span class="txt">Export CSV</span>
+        </button>
         <button
             type="button"
             class="btn btn-sm btn-transparent btn-danger"

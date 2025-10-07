@@ -202,6 +202,15 @@
                 <button
                     type="button"
                     class="btn btn-outline"
+                    on:click={() => recordsList?.exportAllToCSV()}
+                >
+                    <i class="ri-download-2-line" />
+                    <span class="txt">Export CSV</span>
+                </button>
+
+                <button
+                    type="button"
+                    class="btn btn-outline"
                     on:click={() => collectionDocsPanel?.show($activeCollection)}
                 >
                     <i class="ri-code-s-slash-line" />
