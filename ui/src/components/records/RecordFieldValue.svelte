@@ -115,7 +115,7 @@
 {:else if field.type === "date" || field.type === "autodate"}
     <FormattedDate date={rawValue} />
 {:else if field.type === "select"}
-    {#if editable && field.options?.values}
+    {#if editable && field.values}
         <select
             class="inline-select"
             class:loading={isSaving}
@@ -128,7 +128,7 @@
             {#if field.maxSelect === 1}
                 <option value="">-</option>
             {/if}
-            {#each field.options.values as option}
+            {#each field.values as option}
                 <option value={option}>{option}</option>
             {/each}
         </select>
